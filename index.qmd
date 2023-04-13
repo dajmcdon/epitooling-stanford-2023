@@ -155,6 +155,29 @@ ggplot(snapshots %>% filter(!latest),
                inherit.aes = FALSE, color = "black")
 ```
 
+## Simple sliding computations
+
+```{r, echo=TRUE}
+dav14 <- jhu_csse_daily_subset %>%
+  group_by(geo_value) %>%
+  epi_slide(cases_14dav = mean(cases), n = 14)
+```
+
+```{r, fig.align='center'}
+dav14 %>%
+  ggplot(aes(x = time_value)) +
+  geom_col(aes(y = cases / 1000, fill = geo_value), alpha = 0.5, show.legend = FALSE) +
+  geom_line(aes(y = cases_14dav / 1000, col = geo_value), show.legend = FALSE) +
+  facet_wrap(~ geo_value, scales = "free_y") +
+  theme_bw(base_size = 24) +
+  scale_color_viridis_d(option = "B", end = .8) +
+  scale_fill_viridis_d(option = "B", end = .8) +
+  theme(legend.position = "none", axis.text.x = element_text(size = 12)) +
+  scale_x_date(minor_breaks = "month", date_labels = "%b %y") +
+  scale_y_continuous(expand = expansion(mult = c(0, .05))) +
+  labs(x = "Date", y = "Reported COVID-19 cases\n (thousands)")
+```
+
 
 ## `{epipredict}`
 
