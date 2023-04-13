@@ -94,12 +94,48 @@ Stanford STATS/BIODS 352 --- 12 April 2023
 ## `{epiprocess}` 
 ### Basic processing operations and data structures
 
+* General EDA for "panel data"
 * Calculate rolling statistics
 * Fill / impute gaps
 * Examine correlations
 * Store revision history smartly
 * Inspect revision patterns
 * Find / correct outliers
+
+## `{epiprocess}` Data Structures
+
+### `epi_df`: snapshot of a data set
+
+* a tibble with a couple of
+required columns, `geo_value` and `time_value`.
+* arbitrary additional columns containing "measured" values, called "signals"
+* additional "keys" that index subsets (`age_group`, `ethnicity`, etc.)
+
+::: {.callout-note}
+## `epi_df`
+
+Represents a [snapshot]{.primary} that
+contains the most [up-to-date values]{.primary} of the signal variables, [as of]{.primary} a given time.
+:::
+
+## `{epiprocess}` Data Structures
+
+### `epi_archive`: collection of `epi_df`s
+
+* full version history of a data set
+* acts like a bunch of `epi_df`s
+* but stored "compactly"
+* Allows you to do things you would do on an `epi_df` but based on the data that "would have been available at the time"
+
+::: {.callout-note}
+## Revisions
+
+Epidemiology data gets revised frequently. (Happens in Economics as well.) 
+
+* We may want to use the data "as it looked in the past" 
+* or we may want to examine "the history of revisions".
+:::
+
 
 ## Revision patterns
 
@@ -120,75 +156,43 @@ ggplot(snapshots %>% filter(!latest),
 ```
 
 
-## Outlier handling
+## `{epipredict}`
 
-```{r}
-# bc <- CanCovidData::get_british_columbia_case_data()
-# bc <- bc %>%
-#   mutate(time_value = `Reported Date`) %>%
-#   count(time_value) %>%
-#   mutate(geo_value = "BC") %>%
-#   relocate(time_value, geo_value, cases = n) %>%
-#   as_epi_df()
-# saveRDS(bc, "data/bc-covid.rds")
-bc <- readRDS("data/bc-covid.rds")
-```
+### + Framework for customizing from modular components.
 
-```{r}
-ny <- jhu_csse_daily_subset %>%
-  filter(geo_value == "ny") %>%
-  select(time_value, geo_value, cases)
-```
+1. Preprocessor: do things to the data before model training
+2. Trainer: train a model on data, resulting in an object
+3. Predictor: make predictions, using a fitted model object
+4. Postprocessor: do things to the predictions before returning
 
-```{r}
-#| echo: true
-#| code-line-numbers: "1"
-bc <- bc %>% mutate(outliers = detect_outlr_rm(time_value, cases)) 
-ny <- ny %>% mutate(outliers = detect_outlr_stl(time_value, cases))
-```
+. . .
 
-```{r}
-#| fig-align: center
-#| fig-format: svg
-ggplot(bc, aes(x = time_value)) + 
-  geom_ribbon(
-    aes(ymin = outliers$lower, ymax = outliers$upper), 
-    fill = "lightgrey") +
-  geom_line(aes(y = cases), color = primary) + 
-  theme_bw(base_size = 24) +
-  scale_y_continuous(
-    limits = c(0, NA), 
-    expand = expansion(mult = c(0, 0.05))) +
-  labs(x = "", y = "incident cases in\n British Columbia")
-```
-
-## Outlier handling
-
-```{r}
-#| echo: true
-#| code-line-numbers: "2"
-bc <- bc %>% mutate(outliers = detect_outlr_rm(time_value, cases)) 
-ny <- ny %>% mutate(outliers = detect_outlr_stl(time_value, cases))
-```
+A very specialized plug-in to [`{tidymodels}`](https://tidymodels.org)
 
 
-```{r}
-#| fig-align: center
-#| fig-format: svg
-ggplot(ny, aes(x = time_value)) + 
-  geom_ribbon(
-    aes(ymin = outliers$lower / 1000, ymax = outliers$upper / 1000), 
-    fill = "lightgrey") +
-  geom_line(aes(y = cases / 1000), color = primary) + 
-  geom_point(
-    data = function(df) df %>% filter(cases != outliers$replacement),
-    aes(y = outliers$replacement / 1000), color = tertiary, size = 3) +
-  theme_bw(base_size = 24) +
-  scale_y_continuous(
-    limits = c(0, NA), 
-    expand = expansion(mult = c(0, 0.05))) +
-  labs(x = "", y = "incident cases\n in New York (1000's)")
-```
+## Making dumb (but useful!) forecasts in epidemiology
+
+* Suppose we want to predict new hospitalizations $y$, $h$ days ahead, at many locations $j$.
+
+* We're going to make a new forecast each week.
+
+::: {.r-stack}
+::: {.fragment .fade-in-then-out}
+
+### Flatline forecaster
+
+For each location, predict 
+$$\hat{y}_{j,i+h} = y_{j,i}$$
+:::
+
+::: {.fragment}
+
+### AR forecaster
+
+Use an AR model with some covariates, for example:
+$$\hat{y}_{j,i+1} = \mu + a_0 y_{j,i} + a_7 y_{j,i-7} + b_0 x_{j,i} + b_7 x_{j,i-7}$$
+:::
+:::
 
 ## `{epipredict}` 
 ### A forecasting framework
@@ -209,8 +213,8 @@ You can do a limited amount of customization.
 We currently provide:
 
 - Baseline flat-line forecaster
-- Autoregressive forecaster (not an "AR" model, you don't want this)
-- Autoregressive classifier
+- Autoregressive-type forecaster
+- Autoregressive-type classifier
 
 
 ## Basic autoregressive forecaster
@@ -230,7 +234,7 @@ canned <- arx_forecaster(
 )
 ```
 
-[The output is basically ready to submit to]{.primary} [COVID-19 ForecastHub](http://covid19forecasthub.org/)
+The output is a model object that could be reused in the future, along with the predictions for 7 days from now.
 
 ## Adjust lots of built-in options
 
@@ -252,18 +256,6 @@ rf <- arx_forecaster(
 )
 ```
 
-## `{epipredict}`
-
-### + Framework for customizing from modular components.
-
-1. Preprocessor: do things to the data before model training
-2. Trainer: train a model on data, resulting in an object
-3. Predictor: make predictions, using a fitted model object
-4. Postprocessor: do things to the predictions before returning
-
-. . .
-
-A very specialized plug-in to `{tidymodels}`
 
 
 ## Do (almost) anything manually
@@ -299,6 +291,13 @@ latest <- get_test_data(r, jhu)
 # we could make predictions using the same model on ANY test data
 preds <- trained_ewf %>% predict(new_data = latest)
 ```
+
+
+# Pivot to some online examples
+
+[Long book on `{epipredict}`](https://dajmcdon.github.io/cdph-vignette/index.html), in progress...
+
+
 
 ## Packages are under active development {.smaller}
 
@@ -361,4 +360,5 @@ ggplot(qr2, aes(x, y, fill = z)) +
 ![](gfx/usc.jpg){width="250px"}
 ![](gfx/stanford.jpg){width="250px"}
 :::
+
 
